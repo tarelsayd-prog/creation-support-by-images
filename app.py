@@ -25,6 +25,10 @@ Return a SINGLE JSON object with EXACTLY the following keys:
 - "Title": Short title of the product
 - "Type": Must be strictly selected from the allowed Types below (or "(Not Toy)")
 - "Subtype": Must be strictly selected from the allowed Subtypes below (or "(Not Toy)")
+- "Color_Family": Broad color category (e.g., Red, Blue, Neutral, Multi, etc.). If not applicable or not found, output "Not Found"
+- "Color_Name": Specific color shade (e.g., Navy Blue, Crimson, Pastel Pink). If not found, output "Not Found"
+- "Brand": Brand name if clearly visible on the product or packaging. If not found, output "Not Found"
+- "Size": Size or dimensions if clearly visible (e.g., Large, 50cm, 12 inch). If not found, output "Not Found"
 - "Description_EN": Powerful, catchy one-paragraph e-commerce description in English
 - "Description_AR": Natural, highly engaging Arabic translation of the description
 - "Feature_Bullet_1_EN": Key feature/benefit 1 in English
@@ -56,7 +60,7 @@ Rules for Types & Subtypes:
 """
 
 # --- App UI ---
-st.write("Paste your image URLs below. The AI will analyze the images, categorize the products, and generate bilingual descriptions.")
+st.write("Paste your image URLs below. The AI will analyze the images, extract attributes like Brand/Color, categorize the products, and generate bilingual descriptions.")
 
 url_input = st.text_area("Enter Image URLs (one per line):", height=200)
 
@@ -102,6 +106,17 @@ if st.button("Process Images & Generate Content"):
             # Build DataFrame directly from clean JSON dicts
             df = pd.DataFrame(results)
             
+            # Ensure columns are arranged in the exact logical order we requested
+            expected_columns = [
+                "Title", "Type", "Subtype", "Color_Family", "Color_Name", 
+                "Brand", "Size", "Description_EN", "Description_AR", 
+                "Feature_Bullet_1_EN", "Feature_Bullet_1_AR", 
+                "Feature_Bullet_2_EN", "Feature_Bullet_2_AR", 
+                "Feature_Bullet_3_EN", "Feature_Bullet_3_AR"
+            ]
+            columns_to_use = [col for col in expected_columns if col in df.columns]
+            df = df[columns_to_use]
+            
             # Display the table
             st.success("Processing Complete!")
             st.dataframe(df, use_container_width=True)
@@ -111,6 +126,6 @@ if st.button("Process Images & Generate Content"):
             st.download_button(
                 label="Download Data as CSV",
                 data=csv_export,
-                file_name='image_processed_skus.csv',
+                file_name='image_processed_skus_with_attributes.csv',
                 mime='text/csv',
             )
