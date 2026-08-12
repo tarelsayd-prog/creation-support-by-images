@@ -19,10 +19,11 @@ else:
 # --- The Master Prompt ---
 IMAGE_PROMPT = """
 You are an expert inventory categorizer, e-commerce copywriter, and professional English-to-Arabic translator. 
-Analyze the provided product image. First, determine an appropriate short "Title" for this product based on the image. 
+Analyze the provided product image. First, determine an appropriate short title for this product based on the image in English, and translate it to Arabic.
 
 Return a SINGLE JSON object with EXACTLY the following keys:
-- "Title": Short title of the product
+- "Title_EN": Short title of the product in English
+- "Title_AR": Short title of the product translated into Arabic
 - "Type": Must be strictly selected from the allowed Types below (or "(Not Toy)")
 - "Subtype": Must be strictly selected from the allowed Subtypes below (or "(Not Toy)")
 - "Color_Family": Broad color category (e.g., Red, Blue, Neutral, Multi, etc.). If not applicable or not found, output "Not Found"
@@ -60,7 +61,7 @@ Rules for Types & Subtypes:
 """
 
 # --- App UI ---
-st.write("Paste your image URLs below. The AI will analyze the images, extract attributes like Brand/Color, categorize the products, and generate bilingual descriptions.")
+st.write("Paste your image URLs below. The AI will analyze the images, extract attributes like Brand/Color, categorize the products, and generate bilingual descriptions and titles.")
 
 url_input = st.text_area("Enter Image URLs (one per line):", height=200)
 
@@ -108,7 +109,7 @@ if st.button("Process Images & Generate Content"):
             
             # Ensure columns are arranged in the exact logical order we requested
             expected_columns = [
-                "Title", "Type", "Subtype", "Color_Family", "Color_Name", 
+                "Title_EN", "Title_AR", "Type", "Subtype", "Color_Family", "Color_Name", 
                 "Brand", "Size", "Description_EN", "Description_AR", 
                 "Feature_Bullet_1_EN", "Feature_Bullet_1_AR", 
                 "Feature_Bullet_2_EN", "Feature_Bullet_2_AR", 
@@ -126,6 +127,6 @@ if st.button("Process Images & Generate Content"):
             st.download_button(
                 label="Download Data as CSV",
                 data=csv_export,
-                file_name='image_processed_skus_with_attributes.csv',
+                file_name='image_processed_skus_full.csv',
                 mime='text/csv',
             )
