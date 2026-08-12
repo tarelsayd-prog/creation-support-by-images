@@ -1,7 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-import io
+import json
 import requests
 from PIL import Image
 
@@ -20,20 +20,21 @@ else:
 IMAGE_PROMPT = """
 You are an expert inventory categorizer, e-commerce copywriter, and professional English-to-Arabic translator. 
 Analyze the provided product image. First, determine an appropriate short "Title" for this product based on the image. 
-Then, output EXACTLY ONE LINE of CSV data representing this product. Do NOT include a header row.
 
-Columns order (11 columns total):
-Title, Type, Subtype, Description_EN, Description_AR, Feature_Bullet_1_EN, Feature_Bullet_1_AR, Feature_Bullet_2_EN, Feature_Bullet_2_AR, Feature_Bullet_3_EN, Feature_Bullet_3_AR
+Return a SINGLE JSON object with EXACTLY the following keys:
+- "Title": Short title of the product
+- "Type": Must be strictly selected from the allowed Types below (or "(Not Toy)")
+- "Subtype": Must be strictly selected from the allowed Subtypes below (or "(Not Toy)")
+- "Description_EN": Powerful, catchy one-paragraph e-commerce description in English
+- "Description_AR": Natural, highly engaging Arabic translation of the description
+- "Feature_Bullet_1_EN": Key feature/benefit 1 in English
+- "Feature_Bullet_1_AR": Arabic translation of feature 1
+- "Feature_Bullet_2_EN": Key feature/benefit 2 in English
+- "Feature_Bullet_2_AR": Arabic translation of feature 2
+- "Feature_Bullet_3_EN": Key feature/benefit 3 in English
+- "Feature_Bullet_3_AR": Arabic translation of feature 3
 
-Rules:
-1. Strictly use only the Types and Subtypes listed below. If it is not a toy, use (Not Toy) for Type and Subtype.
-2. Description_EN: Write a powerful and catchy one-paragraph product description based on what you see.
-3. Description_AR: Write an accurate and highly engaging Arabic translation of the description.
-4. Feature_Bullet_1_EN to Feature_Bullet_3_EN: Write three distinct, compelling key features based on the image.
-5. Feature_Bullet_1_AR to Feature_Bullet_3_AR: Provide accurate Arabic translations for the three feature bullets.
-6. CRITICAL: Return ONLY valid CSV data (a single comma-separated line). Enclose any text containing commas or newlines in double quotes ("") so that it does not break the CSV layout. Do NOT include markdown blocks like ```csv.
-
-Types and Subtypes:
+Rules for Types & Subtypes:
 - Pretend Play: Beauty Playsets, Tools, Magnet & Felt Playboards, Shops & Accessories, Money & Banking, Doctor Playsets, Household Toys, Kitchen & Food
 - Sports & Outdoor Play: Inflatable Pool Ride On, Pool Toys and Games, Trampolines, Playhouses, Baby Floats & Float Suits, Sand & Water Tables, Sports, Balls, Pools, Gym Sets & Swings, Blasters & Foam Play, Beanbags & Foot Bags, Play Tents & Tunnels, Boats, Kites & Wind Spinners, Beach Toys, Bubbles, Pool Covers & Accessories, Kickball & Playground Balls, Swim Ring, Rafts, Yo-yos, Lawn Games, Fitness Equipment, Water Slides, Ball Pits and Accessories, Play Sets & Playground Equipment, Inflatable Bouncers, Water Blasters & Soakers
 - Hobbies: Models & Model Kits, RC Helicopters, RC Motorcycles, RC Cars & Trucks, RC Ships & Submarines, Slot Cars Race Tracks & Accessories, Hobby RC Vehicles & Parts, Stamp Collecting, RC Trains, RC Quadcopters, Scaled Model Vehicles, RC Vehicles & Parts, Trains & Accessories, Radio Control, RC Animals & Robots, Model Building Kits & Tools, Hobby Building Tools & Hardware, Coin Collecting, RC Airplanes
@@ -55,7 +56,7 @@ Types and Subtypes:
 """
 
 # --- App UI ---
-st.write("Paste your image URLs below. The AI will look at the photos, figure out what the products are, categorize them, and generate multilingual descriptions!")
+st.write("Paste your image URLs below. The AI will analyze the images, categorize the products, and generate bilingual descriptions.")
 
 url_input = st.text_area("Enter Image URLs (one per line):", height=200)
 
@@ -65,14 +66,9 @@ if st.button("Process Images & Generate Content"):
     if not urls:
         st.warning("Please enter at least one Image URL.")
     else:
-        # Define the headers for our final output
-        headers = "Title,Type,Subtype,Description_EN,Description_AR,Feature_Bullet_1_EN,Feature_Bullet_1_AR,Feature_Bullet_2_EN,Feature_Bullet_2_AR,Feature_Bullet_3_EN,Feature_Bullet_3_AR"
-        all_csv_rows = [headers]
-        
-        # Using the model you established
+        results = []
         model = genai.GenerativeModel('gemini-3.5-flash-lite')
         
-        # Create a visual progress bar
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -80,43 +76,41 @@ if st.button("Process Images & Generate Content"):
             status_text.text(f"Processing image {idx + 1} of {len(urls)}...")
             
             try:
-                # 1. Download the image from the URL
+                # 1. Fetch image from URL
                 response = requests.get(url, stream=True, timeout=10)
-                response.raise_for_status() # Check for broken links
+                response.raise_for_status()
                 img = Image.open(response.raw)
                 
-                # 2. Show the image and the prompt to the AI
-                ai_response = model.generate_content([IMAGE_PROMPT, img])
+                # 2. Call Gemini with JSON response mode
+                ai_response = model.generate_content(
+                    [IMAGE_PROMPT, img],
+                    generation_config={"response_mime_type": "application/json"}
+                )
                 
-                # 3. Save the single row of CSV data it generates
-                row_data = ai_response.text.strip()
-                all_csv_rows.append(row_data)
+                # 3. Parse JSON safely
+                data = json.loads(ai_response.text.strip())
+                results.append(data)
                 
             except Exception as e:
                 st.error(f"Failed to process URL: {url}\nError: {e}")
                 
-            # Update the progress bar
             progress_bar.progress((idx + 1) / len(urls))
             
         status_text.text("Finished processing all images!")
         
-        # Combine all rows and convert into a Pandas DataFrame
-        final_csv_data = "\n".join(all_csv_rows)
-        
-        try:
-            df = pd.read_csv(io.StringIO(final_csv_data))
+        if results:
+            # Build DataFrame directly from clean JSON dicts
+            df = pd.DataFrame(results)
             
             # Display the table
             st.success("Processing Complete!")
             st.dataframe(df, use_container_width=True)
             
-            # Allow user to download the table
-            csv_export = df.to_csv(index=False).encode('utf-8-sig') 
+            # Allow user to download CSV formatted with utf-8-sig for proper Arabic text in Excel
+            csv_export = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="Download Data as CSV",
                 data=csv_export,
                 file_name='image_processed_skus.csv',
                 mime='text/csv',
             )
-        except Exception as e:
-            st.error(f"Error parsing final data. AI might have formatted it wrong: {e}")
