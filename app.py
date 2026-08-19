@@ -2,12 +2,12 @@ import streamlit as st
 import google.generativeai as genai
 import pandas as pd
 import json
-import requests
 from PIL import Image
+import time
 
 # --- Configure the Page ---
 st.set_page_config(page_title="Image-to-SKU Categorizer", layout="centered")
-st.title("🖼️ AI Image-to-SKU Categorizer (Multilingual)")
+st.title("🖼️ AI Image-to-SKU Categorizer (Direct Upload)")
 
 # --- API Key Setup ---
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -61,15 +61,14 @@ Rules for Types & Subtypes:
 """
 
 # --- App UI ---
-st.write("Paste your image URLs below. The AI will analyze the images, extract attributes like Brand/Color, categorize the products, and generate bilingual descriptions and titles.")
+st.write("Drag and drop your product images below. The AI will analyze them, categorize the products, and generate bilingual descriptions!")
 
-url_input = st.text_area("Enter Image URLs (one per line):", height=200)
+# Use Streamlit's file uploader instead of text area
+uploaded_files = st.file_uploader("Upload product images (PNG, JPG, JPEG, WEBP)", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True)
 
 if st.button("Process Images & Generate Content"):
-    urls = [url.strip() for url in url_input.split('\n') if url.strip()]
-    
-    if not urls:
-        st.warning("Please enter at least one Image URL.")
+    if not uploaded_files:
+        st.warning("Please upload at least one image.")
     else:
         results = []
         model = genai.GenerativeModel('gemini-3.5-flash-lite')
@@ -77,14 +76,12 @@ if st.button("Process Images & Generate Content"):
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        for idx, url in enumerate(urls):
-            status_text.text(f"Processing image {idx + 1} of {len(urls)}...")
+        for idx, uploaded_file in enumerate(uploaded_files):
+            status_text.text(f"Processing image {idx + 1} of {len(uploaded_files)}: {uploaded_file.name}...")
             
             try:
-                # 1. Fetch image from URL
-                response = requests.get(url, stream=True, timeout=10)
-                response.raise_for_status()
-                img = Image.open(response.raw)
+                # 1. Open the uploaded image file directly
+                img = Image.open(uploaded_file)
                 
                 # 2. Call Gemini with JSON response mode
                 ai_response = model.generate_content(
@@ -92,14 +89,20 @@ if st.button("Process Images & Generate Content"):
                     generation_config={"response_mime_type": "application/json"}
                 )
                 
-                # 3. Parse JSON safely
+                # 3. Parse JSON safely and add the filename as a column for reference
                 data = json.loads(ai_response.text.strip())
+                data["File_Name"] = uploaded_file.name # Keeps track of which image is which
                 results.append(data)
                 
             except Exception as e:
-                st.error(f"Failed to process URL: {url}\nError: {e}")
+                st.error(f"Failed to process image: {uploaded_file.name}\nError: {e}")
                 
-            progress_bar.progress((idx + 1) / len(urls))
+            # Update the progress bar
+            progress_bar.progress((idx + 1) / len(uploaded_files))
+            
+            # 4. SAFETY PAUSE: Wait ~4 seconds to avoid hitting the 15/minute Free Tier limit
+            if idx < len(uploaded_files) - 1:
+                time.sleep(4.1)
             
         status_text.text("Finished processing all images!")
         
@@ -107,9 +110,9 @@ if st.button("Process Images & Generate Content"):
             # Build DataFrame directly from clean JSON dicts
             df = pd.DataFrame(results)
             
-            # Ensure columns are arranged in the exact logical order we requested
+            # Ensure columns are arranged logically, adding the File_Name at the very beginning
             expected_columns = [
-                "Title_EN", "Title_AR", "Type", "Subtype", "Color_Family", "Color_Name", 
+                "File_Name", "Title_EN", "Title_AR", "Type", "Subtype", "Color_Family", "Color_Name", 
                 "Brand", "Size", "Description_EN", "Description_AR", 
                 "Feature_Bullet_1_EN", "Feature_Bullet_1_AR", 
                 "Feature_Bullet_2_EN", "Feature_Bullet_2_AR", 
@@ -127,6 +130,6 @@ if st.button("Process Images & Generate Content"):
             st.download_button(
                 label="Download Data as CSV",
                 data=csv_export,
-                file_name='image_processed_skus_full.csv',
+                file_name='uploaded_images_processed_skus.csv',
                 mime='text/csv',
             )
